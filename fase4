@@ -1,0 +1,99 @@
+"""
+Universidad Nacional Abierta y a Distancia (UNAD)
+Programa: Ingeniería de Sistemas - Curso: Programación (213023)
+Fase 4 - Ejercicio 1: Sistema Integral de Gestión de Clientes, Servicios y Reservas
+Empresa: Software FJ
+"""
+
+from abc import ABC, abstractmethod
+from datetime import datetime
+from functools import singledispatchmethod
+import logging
+import re
+from typing import List, Optional, Union
+
+
+# ==============================================================================
+# 1. CONFIGURACIÓN DEL SISTEMA DE LOGS (ARCHIVO ÚNICO DE EVENTOS Y ERRORES)
+# ==============================================================================
+def configurar_logger(nombre_archivo: str = "software_fj.log") -> logging.Logger:
+    """Configura el registro de eventos y errores en un archivo .log y consola."""
+    logger = logging.getLogger("SoftwareFJ")
+    logger.setLevel(logging.DEBUG)
+
+    if not logger.handlers:
+        formato = logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(module)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        # Manejador de archivo (persiste todos los eventos y errores)
+        file_handler = logging.FileHandler(nombre_archivo, mode="a", encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formato)
+
+        # Manejador de consola (muestra resumen en ejecución)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formato)
+
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger
+
+
+logger = configurar_logger()
+
+
+# ==============================================================================
+# 2. JERARQUÍA DE EXCEPCIONES PERSONALIZADAS
+# ==============================================================================
+class SoftwareFJError(Exception):
+    """Excepción base para todos los errores del sistema Software FJ."""
+
+    def __init__(self, mensaje: str, codigo: str = "ERR-GEN"):
+        self.codigo = codigo
+        super().__init__(f"[{codigo}] {mensaje}")
+
+
+class DatosInvalidosError(SoftwareFJError):
+    """Se lanza cuando los datos ingresados no cumplen el formato o rango esperado."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-DATOS")
+
+
+class ParametroFaltanteError(SoftwareFJError):
+    """Se lanza cuando falta un parámetro obligatorio para crear o procesar una entidad."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-PARAM")
+
+
+class OperacionNoPermitidaError(SoftwareFJError):
+    """Se lanza cuando se intenta ejecutar una acción inválida según el estado actual."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-OPER")
+
+
+class ReservaInvalidaError(SoftwareFJError):
+    """Se lanza ante inconsistencias en la creación o gestión de una reserva."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-RES")
+
+
+class ServicioNoDisponibleError(SoftwareFJError):
+    """Se lanza cuando se solicita un servicio que está ocupado o inactivo."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-DISP")
+
+
+class CalculoInconsistenteError(SoftwareFJError):
+    """Se lanza cuando el cálculo de costos arroja valores negativos, nulos o incoherentes."""
+
+    def __init__(self, mensaje: str):
+        super().__init__(mensaje, codigo="ERR-CALC")
