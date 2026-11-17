@@ -97,3 +97,99 @@ class CalculoInconsistenteError(SoftwareFJError):
 
     def __init__(self, mensaje: str):
         super().__init__(mensaje, codigo="ERR-CALC")
+
+        # ==============================================================================
+# 3. CLASE ABSTRACTA BASE PARA ENTIDADES DEL SISTEMA
+# ==============================================================================
+class EntidadSistema(ABC):
+    """Clase abstracta que representa cualquier entidad general dentro de Software FJ."""
+
+    def __init__(self, identificador: str):
+        if not identificador or not str(identificador).strip():
+            raise ParametroFaltanteError("El identificador de la entidad es obligatorio.")
+        self._identificador = str(identificador).strip()
+        self._fecha_creacion = datetime.now()
+
+    @property
+    def identificador(self) -> str:
+        return self._identificador
+
+    @property
+    def fecha_creacion(self) -> datetime:
+        return self._fecha_creacion
+
+    @abstractmethod
+    def validar_integridad(self) -> bool:
+        """Valida que los atributos internos de la entidad sean consistentes."""
+        pass
+
+    @abstractmethod
+    def obtener_resumen(self) -> str:
+        """Retorna una representación legible de la entidad."""
+        pass
+
+
+# ==============================================================================
+# 4. CLASE CLIENTE (ENCAPSULACIÓN Y VALIDACIONES ESTRICTAS)
+# ==============================================================================
+class Cliente(EntidadSistema):
+    """Representa un cliente de Software FJ con encapsulación de datos personales."""
+
+    def __init__(self, documento: str, nombre: str, correo: str, telefono: str):
+        super().__init__(documento)
+        # Atributos privados (encapsulación) validados mediante setters
+        self.__nombre = ""
+        self.__correo = ""
+        self.__telefono = ""
+
+        self.nombre = nombre
+        self.correo = correo
+        self.telefono = telefono
+        self.validar_integridad()
+
+    @property
+    def nombre(self) -> str:
+        return self.__nombre
+
+    @nombre.setter
+    def nombre(self, valor: str) -> None:
+        if not valor or not isinstance(valor, str) or len(valor.strip()) < 3:
+            raise DatosInvalidosError(
+                f"El nombre '{valor}' es inválido. Debe tener al menos 3 caracteres."
+            )
+        self.__nombre = valor.strip()
+
+    @property
+    def correo(self) -> str:
+        return self.__correo
+
+    @correo.setter
+    def correo(self, valor: str) -> None:
+        patron = r"^[\w\.-]+@[\w\.-]+\.\w{2,}$"
+        if not valor or not isinstance(valor, str) or not re.match(patron, valor.strip()):
+            raise DatosInvalidosError(f"El correo electrónico '{valor}' no tiene un formato válido.")
+        self.__correo = valor.strip().lower()
+
+    @property
+    def telefono(self) -> str:
+        return self.__telefono
+
+    @telefono.setter
+    def telefono(self, valor: str) -> None:
+        limpio = str(valor).strip() if valor is not None else ""
+        if not limpio.isdigit() or not (7 <= len(limpio) <= 15):
+            raise DatosInvalidosError(
+                f"El teléfono '{valor}' debe contener únicamente entre 7 y 15 dígitos."
+            )
+        self.__telefono = limpio
+
+    def validar_integridad(self) -> bool:
+        if not self._identificador.isalnum():
+            raise DatosInvalidosError("El documento del cliente debe ser alfanumérico.")
+        return True
+
+    def obtener_resumen(self) -> str:
+        return (
+            f"Cliente [{self._identificador}] | {self.__nombre} | "
+            f"Email: {self.__correo} | Tel: {self.__telefono}"
+        )
