@@ -193,3 +193,407 @@ class Cliente(EntidadSistema):
             f"Cliente [{self._identificador}] | {self.__nombre} | "
             f"Email: {self.__correo} | Tel: {self.__telefono}"
         )
+        # ==============================================================================
+# 5. CLASE ABSTRACTA SERVICIO Y SUS 3 ESPECIALIZACIONES (POLIMORFISMO)
+# ==============================================================================
+class Servicio(EntidadSistema, ABC):
+    """Clase abstracta base para los servicios ofrecidos por Software FJ."""
+
+    IVA_ESTANDAR = 0.19
+
+    def __init__(self, codigo_servicio: str, nombre: str, tarifa_base_hora: float, disponible: bool = True):
+        super().__init__(codigo_servicio)
+        if not nombre or not str(nombre).strip():
+            raise ParametroFaltanteError("El nombre del servicio es obligatorio.")
+
+        self._nombre = str(nombre).strip()
+        self._disponible = bool(disponible)
+
+        # Validación con encadenamiento de excepciones ante tipos numéricos inválidos
+        try:
+            tarifa_num = float(tarifa_base_hora)
+        except (TypeError, ValueError) as err:
+            raise DatosInvalidosError(
+                f"La tarifa base '{tarifa_base_hora}' no es un valor numérico válido."
+            ) from err
+
+        if tarifa_num <= 0:
+            raise DatosInvalidosError("La tarifa base por hora debe ser mayor que cero.")
+
+        self._tarifa_base_hora = tarifa_num
+
+    @property
+    def nombre(self) -> str:
+        return self._nombre
+
+    @property
+    def tarifa_base_hora(self) -> float:
+        return self._tarifa_base_hora
+
+    @property
+    def disponible(self) -> bool:
+        return self._disponible
+
+    @disponible.setter
+    def disponible(self, estado: bool) -> None:
+        if not isinstance(estado, bool):
+            raise DatosInvalidosError("El estado de disponibilidad debe ser booleano (True/False).")
+        self._disponible = estado
+
+    @abstractmethod
+    def validar_parametros(self) -> bool:
+        """Valida los parámetros específicos de cada tipo de servicio."""
+        pass
+
+    @abstractmethod
+    def describir_servicio(self) -> str:
+        """Retorna una descripción detallada y polimórfica del servicio."""
+        pass
+
+    @abstractmethod
+    def calcular_costo(
+        self,
+        horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = False,
+        recargo_extra: float = 0.0,
+    ) -> float:
+        """
+        Método polimórfico y sobrecargado mediante parámetros opcionales para calcular
+        el costo total según horas, descuentos, IVA y recargos adicionales.
+        """
+        pass
+
+    # Ejemplo adicional de sobrecarga por tipo de argumento usando singledispatchmethod
+    @singledispatchmethod
+    def aplicar_beneficio(self, beneficio: Union[float, str], monto: float) -> float:
+        """Aplica un beneficio ya sea por porcentaje numérico (float) o cupón (str)."""
+        raise DatosInvalidosError(f"Tipo de beneficio no soportado: {type(beneficio).__name__}")
+
+    @aplicar_beneficio.register
+    def _(self, beneficio: float, monto: float) -> float:
+        if not (0.0 <= beneficio <= 0.50):
+            raise CalculoInconsistenteError("El porcentaje de descuento debe estar entre 0% y 50%.")
+        return round(monto * (1 - beneficio), 2)
+
+    @aplicar_beneficio.register
+    def _(self, beneficio: str, monto: float) -> float:
+        cupones = {"UNAD10": 0.10, "SOFTWAREFJ20": 0.20, "VIP15": 0.15}
+        clave = beneficio.strip().upper()
+        if clave not in cupones:
+            raise DatosInvalidosError(f"El cupón promocional '{beneficio}' no es válido.")
+        return round(monto * (1 - cupones[clave]), 2)
+
+    def _validar_horas_y_modificadores(self, horas: int, descuento: float, recargo_extra: float) -> None:
+        if not isinstance(horas, int) or horas <= 0:
+            raise ReservaInvalidaError("La duración de la reserva debe ser un entero positivo de horas.")
+        if not (0.0 <= descuento < 1.0):
+            raise CalculoInconsistenteError("El descuento debe estar en el rango [0.0, 1.0).")
+        if recargo_extra < 0:
+            raise CalculoInconsistenteError("El recargo extra no puede ser negativo.")
+
+    def validar_integridad(self) -> bool:
+        return self.validar_parametros()
+
+    def obtener_resumen(self) -> str:
+        estado = "Disponible" if self._disponible else "Ocupado/Inactivo"
+        return f"[{self._identificador}] {self.describir_servicio()} ({estado})"
+
+
+class ReservaSala(Servicio):
+    """Servicio especializado 1: Alquiler de salas de reuniones, capacitación o juntas."""
+
+    def __init__(
+        self,
+        codigo_servicio: str,
+        nombre: str,
+        tarifa_base_hora: float,
+        capacidad_personas: int,
+        incluye_audiovisual: bool = True,
+        disponible: bool = True,
+    ):
+        super().__init__(codigo_servicio, nombre, tarifa_base_hora, disponible)
+        self._capacidad_personas = capacidad_personas
+        self._incluye_audiovisual = bool(incluye_audiovisual)
+        self.validar_parametros()
+
+    def validar_parametros(self) -> bool:
+        if not isinstance(self._capacidad_personas, int) or not (2 <= self._capacidad_personas <= 200):
+            raise DatosInvalidosError(
+                "La capacidad de la sala debe ser un entero entre 2 y 200 personas."
+            )
+        return True
+
+    def describir_servicio(self) -> str:
+        av = "con equipo audiovisual" if self._incluye_audiovisual else "sin equipo audiovisual"
+        return (
+            f"Sala '{self._nombre}' (Capacidad: {self._capacidad_personas} pers., {av}) - "
+            f"${self._tarifa_base_hora:,.2f}/h"
+        )
+
+    def calcular_costo(
+        self,
+        horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = False,
+        recargo_extra: float = 0.0,
+    ) -> float:
+        self._validar_horas_y_modificadores(horas, descuento, recargo_extra)
+        subtotal = self._tarifa_base_hora * horas
+        # Costo fijo adicional si incluye soporte audiovisual
+        if self._incluye_audiovisual:
+            subtotal += 15000.0 * horas
+
+        subtotal = subtotal * (1 - descuento) + recargo_extra
+        total = subtotal * (1 + self.IVA_ESTANDAR) if aplicar_iva else subtotal
+
+        if total <= 0:
+            raise CalculoInconsistenteError("El costo calculado para la sala es inconsistente (<= 0).")
+        return round(total, 2)
+
+
+class AlquilerEquipo(Servicio):
+    """Servicio especializado 2: Alquiler de equipos tecnológicos (servidores, laptops, drones)."""
+
+    def __init__(
+        self,
+        codigo_servicio: str,
+        nombre: str,
+        tarifa_base_hora: float,
+        categoria_equipo: str,
+        cantidad_unidades: int,
+        disponible: bool = True,
+    ):
+        super().__init__(codigo_servicio, nombre, tarifa_base_hora, disponible)
+        self._categoria_equipo = categoria_equipo
+        self._cantidad_unidades = cantidad_unidades
+        self.validar_parametros()
+
+    def validar_parametros(self) -> bool:
+        if not self._categoria_equipo or not str(self._categoria_equipo).strip():
+            raise ParametroFaltanteError("La categoría del equipo es obligatoria.")
+        if not isinstance(self._cantidad_unidades, int) or self._cantidad_unidades <= 0:
+            raise DatosInvalidosError("La cantidad de unidades del equipo debe ser al menos 1.")
+        return True
+
+    def describir_servicio(self) -> str:
+        return (
+            f"Alquiler Equipo '{self._nombre}' [Cat: {self._categoria_equipo}, "
+            f"Unidades: {self._cantidad_unidades}] - ${self._tarifa_base_hora:,.2f}/h por unidad"
+        )
+
+    def calcular_costo(
+        self,
+        horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = False,
+        recargo_extra: float = 0.0,
+    ) -> float:
+        self._validar_horas_y_modificadores(horas, descuento, recargo_extra)
+        # El costo escala por hora y cantidad de unidades alquiladas
+        subtotal = self._tarifa_base_hora * horas * self._cantidad_unidades
+        # Seguro obligatorio del 5% por daño de hardware
+        seguro_hardware = subtotal * 0.05
+        subtotal = (subtotal + seguro_hardware) * (1 - descuento) + recargo_extra
+        total = subtotal * (1 + self.IVA_ESTANDAR) if aplicar_iva else subtotal
+
+        if total <= 0:
+            raise CalculoInconsistenteError("El costo calculado para el equipo es inconsistente.")
+        return round(total, 2)
+
+
+class AsesoriaEspecializada(Servicio):
+    """Servicio especializado 3: Consultoría y asesoría en arquitectura, ciberseguridad o IA."""
+
+    NIVELES_VALIDOS = {"JUNIOR": 1.0, "SENIOR": 1.35, "ARQUITECTO": 1.75}
+
+    def __init__(
+        self,
+        codigo_servicio: str,
+        nombre: str,
+        tarifa_base_hora: float,
+        area_especialidad: str,
+        nivel_consultor: str,
+        disponible: bool = True,
+    ):
+        super().__init__(codigo_servicio, nombre, tarifa_base_hora, disponible)
+        self._area_especialidad = area_especialidad
+        self._nivel_consultor = nivel_consultor.strip().upper() if nivel_consultor else ""
+        self.validar_parametros()
+
+    def validar_parametros(self) -> bool:
+        if not self._area_especialidad or not str(self._area_especialidad).strip():
+            raise ParametroFaltanteError("El área de especialidad de la asesoría es obligatoria.")
+        if self._nivel_consultor not in self.NIVELES_VALIDOS:
+            raise DatosInvalidosError(
+                f"Nivel de consultor '{self._nivel_consultor}' inválido. "
+                f"Opciones: {list(self.NIVELES_VALIDOS.keys())}"
+            )
+        return True
+
+    def describir_servicio(self) -> str:
+        return (
+            f"Asesoría '{self._nombre}' [Área: {self._area_especialidad}, "
+            f"Nivel: {self._nivel_consultor}] - Tarifa base ${self._tarifa_base_hora:,.2f}/h"
+        )
+
+    def calcular_costo(
+        self,
+        horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = False,
+        recargo_extra: float = 0.0,
+    ) -> float:
+        self._validar_horas_y_modificadores(horas, descuento, recargo_extra)
+        multiplicador = self.NIVELES_VALIDOS[self._nivel_consultor]
+        subtotal = (self._tarifa_base_hora * multiplicador) * horas
+        subtotal = subtotal * (1 - descuento) + recargo_extra
+        total = subtotal * (1 + self.IVA_ESTANDAR) if aplicar_iva else subtotal
+
+        if total <= 0:
+            raise CalculoInconsistenteError("El costo calculado para la asesoría es inconsistente.")
+        return round(total, 2)
+
+
+# ==============================================================================
+# 6. CLASE RESERVA (ESTADOS, CONFIRMACIÓN, CANCELACIÓN Y PROCESAMIENTO)
+# ==============================================================================
+class Reserva(EntidadSistema):
+    """Integra un Cliente, un Servicio, la duración y el ciclo de vida de la reserva."""
+
+    ESTADOS = ("PENDIENTE", "CONFIRMADA", "CANCELADA", "PROCESADA")
+
+    def __init__(
+        self,
+        codigo_reserva: str,
+        cliente: Cliente,
+        servicio: Servicio,
+        duracion_horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = True,
+    ):
+        super().__init__(codigo_reserva)
+
+        if not isinstance(cliente, Cliente):
+            raise ParametroFaltanteError("Se requiere una instancia válida de Cliente.")
+        if not isinstance(servicio, Servicio):
+            raise ParametroFaltanteError("Se requiere una instancia válida de Servicio.")
+        if not servicio.disponible:
+            raise ServicioNoDisponibleError(
+                f"El servicio '{servicio.nombre}' ({servicio.identificador}) no está disponible."
+            )
+        if not isinstance(duracion_horas, int) or duracion_horas <= 0:
+            raise ReservaInvalidaError("La duración de la reserva debe ser mayor a 0 horas.")
+
+        self._cliente = cliente
+        self._servicio = servicio
+        self._duracion_horas = duracion_horas
+        self._descuento = descuento
+        self._aplicar_iva = aplicar_iva
+        self._estado = "PENDIENTE"
+        self._costo_total: Optional[float] = None
+        self.validar_integridad()
+
+    @property
+    def cliente(self) -> Cliente:
+        return self._cliente
+
+    @property
+    def servicio(self) -> Servicio:
+        return self._servicio
+
+    @property
+    def estado(self) -> str:
+        return self._estado
+
+    @property
+    def costo_total(self) -> Optional[float]:
+        return self._costo_total
+
+    def validar_integridad(self) -> bool:
+        if self._estado not in self.ESTADOS:
+            raise ReservaInvalidaError(f"Estado de reserva desconocido: {self._estado}")
+        return True
+
+    def confirmar(self) -> None:
+        """Confirma la reserva si está pendiente y bloquea la disponibilidad del servicio."""
+        if self._estado != "PENDIENTE":
+            raise OperacionNoPermitidaError(
+                f"No se puede confirmar la reserva {self._identificador} porque está en estado '{self._estado}'."
+            )
+        if not self._servicio.disponible:
+            raise ServicioNoDisponibleError(
+                f"El servicio '{self._servicio.nombre}' ya fue ocupado por otra reserva."
+            )
+
+        self._estado = "CONFIRMADA"
+        self._servicio.disponible = False
+        logger.info(f"Reserva {self._identificador} CONFIRMADA para {self._cliente.nombre}.")
+
+    def cancelar(self, motivo: str = "Solicitud del cliente") -> None:
+        """Cancela una reserva pendiente o confirmada y libera el servicio."""
+        if self._estado in ("CANCELADA", "PROCESADA"):
+            raise OperacionNoPermitidaError(
+                f"No es posible cancelar la reserva {self._identificador} en estado '{self._estado}'."
+            )
+
+        estado_anterior = self._estado
+        self._estado = "CANCELADA"
+        if estado_anterior == "CONFIRMADA":
+            self._servicio.disponible = True
+
+        logger.warning(
+            f"Reserva {self._identificador} CANCELADA (anterior: {estado_anterior}). Motivo: {motivo}"
+        )
+
+    def procesar(self, recargo_extra: float = 0.0) -> float:
+        """
+        Procesa y liquida una reserva confirmada.
+        Utiliza bloque try/except/finally y encadenamiento de excepciones.
+        """
+        logger.info(f"Iniciando procesamiento de reserva {self._identificador}...")
+        try:
+            if self._estado != "CONFIRMADA":
+                raise OperacionNoPermitidaError(
+                    f"La reserva {self._identificador} debe estar CONFIRMADA para procesarse "
+                    f"(estado actual: {self._estado})."
+                )
+
+            # Cálculo polimórfico del costo
+            costo = self._servicio.calcular_costo(
+                horas=self._duracion_horas,
+                descuento=self._descuento,
+                aplicar_iva=self._aplicar_iva,
+                recargo_extra=recargo_extra,
+            )
+            self._costo_total = costo
+            self._estado = "PROCESADA"
+            # Una vez finalizado el servicio, vuelve a estar disponible
+            self._servicio.disponible = True
+            logger.info(
+                f"Reserva {self._identificador} PROCESADA exitosamente. Total cobrado: ${costo:,.2f}"
+            )
+            return costo
+
+        except SoftwareFJError:
+            # Re-lanza excepciones controladas del dominio tras registrarlas
+            raise
+        except Exception as err:
+            # Encadenamiento de excepciones para errores inesperados de cálculo
+            raise CalculoInconsistenteError(
+                f"Fallo inesperado al liquidar la reserva {self._identificador}."
+            ) from err
+        finally:
+            logger.debug(
+                f"Auditoría de cierre de intento de procesamiento -> Reserva: {self._identificador} | "
+                f"Estado final: {self._estado}"
+            )
+
+    def obtener_resumen(self) -> str:
+        costo_str = f"${self._costo_total:,.2f}" if self._costo_total is not None else "Por liquidar"
+        return (
+            f"Reserva [{self._identificador}] | Cliente: {self._cliente.nombre} | "
+            f"Servicio: {self._servicio.nombre} | Horas: {self._duracion_horas} | "
+            f"Estado: {self._estado} | Total: {costo_str}"
+        )
+
