@@ -1,0 +1,254 @@
+import logging
+from abc import ABC, abstractmethod
+from datetime import datetime
+
+# =====================================================================
+# 1. CONFIGURACIÓN DEL ARCHIVO DE LOGS
+# =====================================================================
+logging.basicConfig(
+    filename="registro_eventos_fj.log",
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    encoding="utf-8"
+)
+
+def registrar_evento(nivel: str, mensaje: str):
+    """Registra eventos y errores en el archivo plano de logs."""
+    if nivel == "INFO":
+        logging.info(mensaje)
+    elif nivel == "ERROR":
+        logging.error(mensaje)
+    elif nivel == "WARNING":
+        logging.warning(mensaje)
+
+
+# =====================================================================
+# 2. EXCEPCIONES PERSONALIZADAS
+# =====================================================================
+class SoftwareFJError(Exception):
+    """Excepción base para el sistema de Software FJ."""
+    pass
+
+class DatosInvalidosError(SoftwareFJError):
+    """Se lanza cuando los datos ingresados no cumplen las validaciones."""
+    pass
+
+class ServicioNoDisponibleError(SoftwareFJError):
+    """Se lanza cuando se intenta reservar un servicio ocupado o inactivo."""
+    pass
+
+class OperacionNoPermitidaError(SoftwareFJError):
+    """Se lanza al intentar realizar una acción inválida sobre una reserva."""
+    pass
+
+
+# =====================================================================
+# 3. CLASE ABSTRACTA BASE (ENTIDAD GENERAL)
+# =====================================================================
+class EntidadBase(ABC):
+    """Clase abstracta que representa cualquier entidad del sistema."""
+    def __init__(self, id_entidad: str):
+        if not id_entidad or not isinstance(id_entidad, str):
+            raise DatosInvalidosError("El ID de la entidad debe ser una cadena de texto válida.")
+        self._id = id_entidad.strip()
+        self._fecha_creacion = datetime.now()
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @abstractmethod
+    def obtener_resumen(self) -> str:
+        """Método abstracto obligatorio para describir la entidad."""
+        pass
+
+
+# =====================================================================
+# 4. CLASE CLIENTE (ENCAPSULACIÓN Y VALIDACIONES)
+# =====================================================================
+class Cliente(EntidadBase):
+    def __init__(self, id_cliente: str, nombre: str, correo: str, telefono: str):
+        super().__init__(id_cliente)
+        self.nombre = nombre
+        self.correo = correo
+        self.telefono = telefono
+
+    @property
+    def nombre(self) -> str:
+        return self._nombre
+
+    @nombre.setter
+    def nombre(self, valor: str):
+        if not valor or len(valor.strip()) < 3:
+            raise DatosInvalidosError(f"Nombre inválido: '{valor}'. Debe tener al menos 3 caracteres.")
+        self._nombre = valor.strip()
+
+    @property
+    def correo(self) -> str:
+        return self._correo
+
+    @correo.setter
+    def correo(self, valor: str):
+        if not valor or "@" not in valor or "." not in valor:
+            raise DatosInvalidosError(f"Correo electrónico inválido: '{valor}'.")
+        self._correo = valor.strip()
+
+    @property
+    def telefono(self) -> str:
+        return self._telefono
+
+    @telefono.setter
+    def telefono(self, valor: str):
+        if not valor or not valor.isdigit() or len(valor) < 7:
+            raise DatosInvalidosError(f"Teléfono inválido: '{valor}'. Debe contener solo dígitos (mínimo 7).")
+        self._telefono = valor
+
+    def obtener_resumen(self) -> str:
+        return f"Cliente [{self.id}]: {self.nombre} | Email: {self.correo} | Tel: {self.telefono}"
+
+
+# =====================================================================
+# 5. JERARQUÍA DE SERVICIOS (ABSTRACCIÓN, HERENCIA Y POLIMORFISMO)
+# =====================================================================
+class Servicio(EntidadBase, ABC):
+    def __init__(self, id_servicio: str, nombre: str, tarifa_base: float):
+        super().__init__(id_servicio)
+        if not nombre or len(nombre.strip()) < 3:
+            raise DatosInvalidosError("El nombre del servicio es obligatorio.")
+        if tarifa_base <= 0:
+            raise DatosInvalidosError("La tarifa base debe ser mayor a cero.")
+        self._nombre = nombre.strip()
+        self._tarifa_base = float(tarifa_base)
+        self._disponible = True
+
+    @property
+    def nombre(self) -> str:
+        return self._nombre
+
+    @property
+    def disponible(self) -> bool:
+        return self._disponible
+
+    @disponible.setter
+    def disponible(self, estado: bool):
+        self._disponible = bool(estado)
+
+    @abstractmethod
+    def validar_parametros(self, horas: int) -> None:
+        pass
+
+    @abstractmethod
+    def calcular_costo_base(self, horas: int) -> float:
+        pass
+
+    # Simulación de sobrecarga de métodos mediante parámetros opcionales
+    def calcular_costo_total(self, horas: int, descuento: float = 0.0, aplicar_iva: bool = True) -> float:
+        """Calcula el costo total permitiendo variantes con impuestos o descuentos."""
+        self.validar_parametros(horas)
+        if descuento < 0 or descuento > 0.5:
+            raise DatosInvalidosError("El descuento debe estar entre 0% (0.0) y 50% (0.5).")
+        
+        subtotal = self.calcular_costo_base(horas)
+        subtotal_con_descuento = subtotal * (1 - descuento)
+        total = subtotal_con_descuento * 1.19 if aplicar_iva else subtotal_con_descuento
+        return round(total, 2)
+
+
+class ReservaSala(Servicio):
+    def __init__(self, id_servicio: str, nombre: str, tarifa_hora: float, capacidad: int):
+        super().__init__(id_servicio, nombre, tarifa_hora)
+        if capacidad <= 0:
+            raise DatosInvalidosError("La capacidad de la sala debe ser mayor a 0.")
+        self._capacidad = capacidad
+
+    def validar_parametros(self, horas: int) -> None:
+        if horas < 1 or horas > 12:
+            raise DatosInvalidosError("Las salas se reservan entre 1 y 12 horas.")
+
+    def calcular_costo_base(self, horas: int) -> float:
+        # Cargo adicional del 10% si la sala supera las 20 personas
+        recargo = 1.10 if self._capacidad > 20 else 1.0
+        return self._tarifa_base * horas * recargo
+
+    def obtener_resumen(self) -> str:
+        estado = "Disponible" if self.disponible else "Ocupada"
+        return f"Sala [{self.id}]: {self.nombre} (Cap: {self._capacidad}) - ${self._tarifa_base}/h [{estado}]"
+
+
+class AlquilerEquipo(Servicio):
+    def __init__(self, id_servicio: str, nombre: str, tarifa_hora: float, gama: str):
+        super().__init__(id_servicio, nombre, tarifa_hora)
+        if gama.lower() not in ["estandar", "alta"]:
+            raise DatosInvalidosError("La gama del equipo debe ser 'estandar' o 'alta'.")
+        self._gama = gama.lower()
+
+    def validar_parametros(self, horas: int) -> None:
+        if horas < 2:
+            raise DatosInvalidosError("El alquiler de equipos requiere un mínimo de 2 horas.")
+
+    def calcular_costo_base(self, horas: int) -> float:
+        seguro = 15000.0 if self._gama == "alta" else 5000.0
+        return (self._tarifa_base * horas) + seguro
+
+    def obtener_resumen(self) -> str:
+        estado = "Disponible" if self.disponible else "Alquilado"
+        return f"Equipo [{self.id}]: {self.nombre} (Gama {self._gama}) - ${self._tarifa_base}/h [{estado}]"
+
+
+class AsesoriaEspecializada(Servicio):
+    def __init__(self, id_servicio: str, nombre: str, tarifa_hora: float, especialidad: str):
+        super().__init__(id_servicio, nombre, tarifa_hora)
+        if not especialidad:
+            raise DatosInvalidosError("Debe indicar la especialidad de la asesoría.")
+        self._especialidad = especialidad
+
+    def validar_parametros(self, horas: int) -> None:
+        if horas <= 0:
+            raise DatosInvalidosError("La duración de la asesoría debe ser positiva.")
+
+    def calcular_costo_base(self, horas: int) -> float:
+        return self._tarifa_base * horas
+
+    def obtener_resumen(self) -> str:
+        estado = "Disponible" if self.disponible else "Asignada"
+        return f"Asesoría [{self.id}]: {self.nombre} ({self._especialidad}) - ${self._tarifa_base}/h [{estado}]"
+
+
+# =====================================================================
+# 6. CLASE RESERVA (INTEGRACIÓN Y GESTIÓN DE ESTADOS)
+# =====================================================================
+class Reserva(EntidadBase):
+    def __init__(self, id_reserva: str, cliente: Cliente, servicio: Servicio, duracion_horas: int):
+        super().__init__(id_reserva)
+        if not isinstance(cliente, Cliente) or not isinstance(servicio, Servicio):
+            raise DatosInvalidosError("Cliente o Servicio inválido al crear la reserva.")
+        
+        self._cliente = cliente
+        self._servicio = servicio
+        self._duracion = duracion_horas
+        self._estado = "PENDIENTE"
+        self._costo_final = 0.0
+
+    @property
+    def estado(self) -> str:
+        return self._estado
+
+    def confirmar(self, descuento: float = 0.0, aplicar_iva: bool = True):
+        if not self._servicio.disponible:
+            raise ServicioNoDisponibleError(f"El servicio '{self._servicio.nombre}' no está disponible.")
+        if self._estado != "PENDIENTE":
+            raise OperacionNoPermitidaError(f"No se puede confirmar una reserva en estado {self._estado}.")
+        
+        self._costo_final = self._servicio.calcular_costo_total(self._duracion, descuento, aplicar_iva)
+        self._servicio.disponible = False
+        self._estado = "CONFIRMADA"
+
+    def cancelar(self):
+        if self._estado == "CANCELADA":
+            raise OperacionNoPermitidaError("La reserva ya se encuentra cancelada.")
+        if self._estado == "CONFIRMADA":
+            self._servicio.disponible = True
+        self._estado = "CANCELADA"
+
+    def obtener_resumen(self) -> str:
