@@ -597,3 +597,99 @@ class Reserva(EntidadSistema):
             f"Estado: {self._estado} | Total: {costo_str}"
         )
 
+# ==============================================================================
+# 7. CONTROLADOR PRINCIPAL DEL SISTEMA (GESTIÓN EN MEMORIA SIN BD)
+# ==============================================================================
+class SistemaGestionSoftwareFJ:
+    """Administra las listas internas de clientes, servicios y reservas sin bases de datos."""
+
+    def __init__(self):
+        self._clientes: List[Cliente] = []
+        self._servicios: List[Servicio] = []
+        self._reservas: List[Reserva] = []
+        logger.info("=== Sistema Integral Software FJ iniciado correctamente ===")
+
+    def registrar_cliente(self, cliente: Cliente) -> bool:
+        """Registra un cliente evitando duplicados mediante bloque try/except/else."""
+        try:
+            if any(c.identificador == cliente.identificador for c in self._clientes):
+                raise DatosInvalidosError(
+                    f"Ya existe un cliente registrado con el documento '{cliente.identificador}'."
+                )
+        except SoftwareFJError as err:
+            logger.error(f"Error al registrar cliente: {err}")
+            return False
+        else:
+            self._clientes.append(cliente)
+            logger.info(f"Cliente registrado: {cliente.obtener_resumen()}")
+            return True
+
+    def registrar_servicio(self, servicio: Servicio) -> bool:
+        """Registra un servicio en el catálogo interno mediante bloque try/except/else."""
+        try:
+            if any(s.identificador == servicio.identificador for s in self._servicios):
+                raise DatosInvalidosError(
+                    f"Ya existe un servicio registrado con el código '{servicio.identificador}'."
+                )
+        except SoftwareFJError as err:
+            logger.error(f"Error al registrar servicio: {err}")
+            return False
+        else:
+            self._servicios.append(servicio)
+            logger.info(f"Servicio registrado: {servicio.obtener_resumen()}")
+            return True
+
+    def crear_reserva(
+        self,
+        codigo_reserva: str,
+        doc_cliente: str,
+        cod_servicio: str,
+        duracion_horas: int,
+        descuento: float = 0.0,
+        aplicar_iva: bool = True,
+    ) -> Optional[Reserva]:
+        """Crea una reserva buscando cliente y servicio en las listas internas."""
+        try:
+            cliente = next((c for c in self._clientes if c.identificador == doc_cliente), None)
+            if cliente is None:
+                raise DatosInvalidosError(f"No se encontró el cliente con documento '{doc_cliente}'.")
+
+            servicio = next((s for s in self._servicios if s.identificador == cod_servicio), None)
+            if servicio is None:
+                raise DatosInvalidosError(f"No se encontró el servicio con código '{cod_servicio}'.")
+
+            if any(r.identificador == codigo_reserva for r in self._reservas):
+                raise ReservaInvalidaError(f"El código de reserva '{codigo_reserva}' ya existe.")
+
+            nueva_reserva = Reserva(
+                codigo_reserva=codigo_reserva,
+                cliente=cliente,
+                servicio=servicio,
+                duracion_horas=duracion_horas,
+                descuento=descuento,
+                aplicar_iva=aplicar_iva,
+            )
+        except SoftwareFJError as err:
+            logger.error(f"Fallo al crear reserva '{codigo_reserva}': {err}")
+            return None
+        else:
+            self._reservas.append(nueva_reserva)
+            logger.info(f"Reserva creada en estado PENDIENTE: {nueva_reserva.obtener_resumen()}")
+            return nueva_reserva
+
+    def mostrar_reporte_consola(self) -> None:
+        print("\n" + "=" * 80)
+        print("REPORTE FINAL DEL SISTEMA - SOFTWARE FJ (EN MEMORIA)")
+        print("=" * 80)
+        print(f"Total Clientes registrados : {len(self._clientes)}")
+        for c in self._clientes:
+            print(f"  - {c.obtener_resumen()}")
+
+        print(f"\nTotal Servicios registrados: {len(self._servicios)}")
+        for s in self._servicios:
+            print(f"  - {s.obtener_resumen()}")
+
+        print(f"\nTotal Reservas registradas : {len(self._reservas)}")
+        for r in self._reservas:
+            print(f"  - {r.obtener_resumen()}")
+        print("=" * 80 + "\n")
