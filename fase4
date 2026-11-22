@@ -693,3 +693,122 @@ class SistemaGestionSoftwareFJ:
         for r in self._reservas:
             print(f"  - {r.obtener_resumen()}")
         print("=" * 80 + "\n")
+
+        # ==============================================================================
+# 8. SIMULACIÓN DE 12 OPERACIONES COMPLETAS (VÁLIDAS E INVÁLIDAS)
+# ==============================================================================
+def ejecutar_simulacion() -> None:
+    sistema = SistemaGestionSoftwareFJ()
+
+    print("\n--- INICIANDO SIMULACIÓN DE OPERACIONES EN SOFTWARE FJ ---\n")
+
+    # OPERACIÓN 1: Registro válido de Cliente 1
+    try:
+        c1 = Cliente("1052398412", "Laura Gómez", "laura.gomez@empresa.com", "3104567890")
+        sistema.registrar_cliente(c1)
+    except SoftwareFJError as e:
+        logger.error(f"Op 1 fallida: {e}")
+
+    # OPERACIÓN 2: Registro válido de Cliente 2
+    try:
+        c2 = Cliente("80123456", "Carlos Mendoza", "cmendoza@techcol.co", "3209876543")
+        sistema.registrar_cliente(c2)
+    except SoftwareFJError as e:
+        logger.error(f"Op 2 fallida: {e}")
+
+    # OPERACIÓN 3: Registro INVÁLIDO de Cliente (correo mal formado y teléfono corto)
+    try:
+        c_invalido = Cliente("999888", "Ana", "correo_sin_arroba.com", "123")
+        sistema.registrar_cliente(c_invalido)
+    except SoftwareFJError as e:
+        logger.error(f"Op 3 controlada (Cliente inválido): {e}")
+
+    # OPERACIÓN 4: Registro duplicado de Cliente (mismo documento)
+    try:
+        c_duplicado = Cliente("1052398412", "Laura Clon", "otra@empresa.com", "3112223344")
+        sistema.registrar_cliente(c_duplicado)
+    except SoftwareFJError as e:
+        logger.error(f"Op 4 controlada (Cliente duplicado): {e}")
+
+    # OPERACIÓN 5: Creación válida de Servicio 1 (ReservaSala)
+    try:
+        s1 = ReservaSala("SALA-01", "Sala Innovación Boyacá", 80000, capacidad_personas=25, incluye_audiovisual=True)
+        sistema.registrar_servicio(s1)
+    except SoftwareFJError as e:
+        logger.error(f"Op 5 fallida: {e}")
+
+    # OPERACIÓN 6: Creación válida de Servicio 2 (AlquilerEquipo)
+    try:
+        s2 = AlquilerEquipo("EQP-01", "Workstation Dell Precision", 35000, "Cómputo Alto Rendimiento", cantidad_unidades=3)
+        sistema.registrar_servicio(s2)
+    except SoftwareFJError as e:
+        logger.error(f"Op 6 fallida: {e}")
+
+    # OPERACIÓN 7: Creación válida de Servicio 3 (AsesoriaEspecializada)
+    try:
+        s3 = AsesoriaEspecializada("ASE-01", "Auditoría Cloud & DevSecOps", 120000, "Ciberseguridad", "ARQUITECTO")
+        sistema.registrar_servicio(s3)
+    except SoftwareFJError as e:
+        logger.error(f"Op 7 fallida: {e}")
+
+    # OPERACIÓN 8: Creación INVÁLIDA de Servicio (tarifa no numérica -> encadenamiento de excepción)
+    try:
+        s_invalido = ReservaSala("SALA-ERR", "Sala Defectuosa", "tarifa_invalida", capacidad_personas=10)  # type: ignore
+        sistema.registrar_servicio(s_invalido)
+    except SoftwareFJError as e:
+        logger.error(f"Op 8 controlada (Encadenamiento de excepción): {e} | Causa: {e.__cause__}")
+
+    # OPERACIÓN 9: Creación INVÁLIDA de Servicio (nivel de consultor inexistente)
+    try:
+        s_ase_err = AsesoriaEspecializada("ASE-ERR", "Asesoría IA", 90000, "IA", "MASTER_SUPREMO")
+        sistema.registrar_servicio(s_ase_err)
+    except SoftwareFJError as e:
+        logger.error(f"Op 9 controlada (Parámetro de asesoría inválido): {e}")
+
+    # OPERACIÓN 10: Reserva EXITOSA, confirmación y procesamiento completo (Polimorfismo + IVA)
+    res1 = sistema.crear_reserva("RES-1001", "1052398412", "SALA-01", duracion_horas=4, descuento=0.10, aplicar_iva=True)
+    if res1:
+        try:
+            res1.confirmar()
+            res1.procesar(recargo_extra=10000)
+        except SoftwareFJError as e:
+            logger.error(f"Op 10 error inesperado: {e}")
+
+    # OPERACIÓN 11: Intento FALLIDO de reserva simultánea sobre servicio ocupado y transición ilegal
+    res2 = sistema.crear_reserva("RES-1002", "80123456", "EQP-01", duracion_horas=5, descuento=0.05, aplicar_iva=True)
+    if res2:
+        try:
+            res2.confirmar()
+            # Intentar reservar el mismo equipo ocupado desde otro cliente debe fallar
+            sistema.crear_reserva("RES-1003", "1052398412", "EQP-01", duracion_horas=2)
+            # Cancelar res2 y luego intentar procesarla (operación no permitida)
+            res2.cancelar("Cambio de cronograma del cliente")
+            res2.procesar()
+        except SoftwareFJError as e:
+            logger.error(f"Op 11 controlada (Conflicto disponibilidad / estado ilegal): {e}")
+
+    # OPERACIÓN 12: Demostración de métodos sobrecargados en Asesoría Especializada
+    res3 = sistema.crear_reserva("RES-1004", "80123456", "ASE-01", duracion_horas=3, aplicar_iva=False)
+    if res3:
+        try:
+            # Uso de variantes sobrecargadas de calcular_costo y aplicar_beneficio
+            costo_sin_iva = s3.calcular_costo(3)
+            costo_con_iva_y_descuento = s3.calcular_costo(3, descuento=0.15, aplicar_iva=True)
+            costo_con_cupon = s3.aplicar_beneficio("SOFTWAREFJ20", costo_sin_iva)
+            logger.info(
+                f"Op 12 Sobrecarga de costos -> Base: ${costo_sin_iva:,.2f} | "
+                f"Con IVA y 15% desc: ${costo_con_iva_y_descuento:,.2f} | "
+                f"Con cupón SOFTWAREFJ20: ${costo_con_cupon:,.2f}"
+            )
+            res3.confirmar()
+            res3.procesar()
+        except SoftwareFJError as e:
+            logger.error(f"Op 12 error: {e}")
+
+    # Reporte final demostrando que la aplicación nunca se detuvo
+    sistema.mostrar_reporte_consola()
+    print("Ejecución finalizada sin interrupciones. Revisa el archivo 'software_fj.log' para el historial completo.")
+
+
+if __name__ == "__main__":
+    ejecutar_simulacion()
